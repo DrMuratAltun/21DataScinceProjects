@@ -1,0 +1,138 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lawfirm
+      POSTGRES_PASSWORD: lawfirm
+      POSTGRES_DB: lawfirm
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lawfirm']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - '11434:11434'
+    environment:
+      OLLAMA_NUM_PARALLEL: '4'
+      OLLAMA_KEEP_ALIVE: '30m'
+      OLLAMA_MAX_LOADED_MODELS: '2'
+    volumes:
+      - ollama_data:/root/.ollama
+
+  pii-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.pii
+    restart: unless-stopped
+    ports:
+      - '5001:5001'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:5001/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      pii-service:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://lawfirm:lawfirm@postgres:5432/lawfirm?schema=public
+      REDIS_URL: redis://redis:6379
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_API_BASE: http://ollama:11434/v1
+      PII_SERVICE_URL: http://pii-service:5001
+      STORAGE_ROOT: /data/storage
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me}
+    ports:
+      - '3000:3000'
+    volumes:
+      - storage_data:/data/storage
+
+  worker-pdf:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    restart: unless-stopped
+    depends_on: [postgres, redis]
+    environment:
+      WORKER_KINDS: pdf
+      DATABASE_URL: postgresql://lawfirm:lawfirm@postgres:5432/lawfirm?schema=public
+      REDIS_URL: redis://redis:6379
+      STORAGE_ROOT: /data/storage
+    volumes:
+      - storage_data:/data/storage
+
+  worker-embed:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    restart: unless-stopped
+    depends_on: [postgres, redis, ollama]
+    environment:
+      WORKER_KINDS: embedding
+      DATABASE_URL: postgresql://lawfirm:lawfirm@postgres:5432/lawfirm?schema=public
+      REDIS_URL: redis://redis:6379
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_API_BASE: http://ollama:11434/v1
+
+  worker-scrape:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    restart: unless-stopped
+    depends_on: [postgres, redis]
+    environment:
+      WORKER_KINDS: scrape
+      DATABASE_URL: postgresql://lawfirm:lawfirm@postgres:5432/lawfirm?schema=public
+      REDIS_URL: redis://redis:6379
+
+  worker-report:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    restart: unless-stopped
+    depends_on: [postgres, redis]
+    environment:
+      WORKER_KINDS: report
+      DATABASE_URL: postgresql://lawfirm:lawfirm@postgres:5432/lawfirm?schema=public
+      REDIS_URL: redis://redis:6379
+      STORAGE_ROOT: /data/storage
+    volumes:
+      - storage_data:/data/storage
+
+volumes:
+  postgres_data:
+  ollama_data:
+  storage_data:

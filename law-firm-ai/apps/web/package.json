@@ -1,0 +1,51 @@
+{
+  "name": "@law-firm-ai/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^1.0.0",
+    "@ai-sdk/react": "^1.0.0",
+    "@hookform/resolvers": "^3.9.1",
+    "@law-firm-ai/ai": "workspace:*",
+    "@law-firm-ai/db": "workspace:*",
+    "@law-firm-ai/ui": "workspace:*",
+    "@tanstack/react-table": "^8.20.0",
+    "ai": "^4.0.0",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.21.0",
+    "date-fns": "^4.1.0",
+    "ioredis": "^5.4.1",
+    "lucide-react": "^0.460.0",
+    "next": "^16.0.0",
+    "next-auth": "5.0.0-beta.25",
+    "pdf-parse": "^1.1.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-hook-form": "^7.54.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.16.0",
+    "eslint-config-next": "^16.0.0",
+    "postcss": "^8.5.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,17 @@
+FROM mcr.microsoft.com/playwright:v1.49.0-jammy AS base
+ENV PNPM_HOME=/pnpm PATH=/pnpm:/usr/local/bin:/usr/bin:/bin
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+WORKDIR /app
+
+COPY pnpm-workspace.yaml package.json tsconfig.base.json ./
+COPY packages/db/package.json packages/db/
+COPY packages/ai/package.json packages/ai/
+COPY services/worker/package.json services/worker/
+COPY services/scraper/package.json services/scraper/
+RUN pnpm fetch
+
+COPY . .
+RUN pnpm install --frozen-lockfile --offline
+RUN pnpm --filter @law-firm-ai/db run generate
+
+CMD ["pnpm", "--filter", "@law-firm-ai/worker", "run", "start"]

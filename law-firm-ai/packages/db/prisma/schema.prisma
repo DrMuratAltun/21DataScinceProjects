@@ -1,0 +1,421 @@
+// Hukuk Bürosu + Yerel AI Asistan — Prisma şeması
+// KVKK append-only: tüm ana varlıklarda deletedAt (soft delete) + AuditLog zorunlu.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+// -----------------------------------------------------------------------------
+// Kullanıcı & yetki
+// -----------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  LAWYER // Avukat
+  PARALEGAL // Stajyer
+  SECRETARY // Sekreter
+  CLIENT // Müvekkil portal kullanıcısı
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  role         UserRole @default(LAWYER)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  assignedCases Case[]          @relation("CaseAssignee")
+  uploadedDocs  Document[]      @relation("DocumentUploader")
+  chatSessions  ChatSession[]
+  auditLogs     AuditLog[]
+  clientProfile Client?         @relation("ClientPortal")
+
+  @@index([email])
+  @@index([deletedAt])
+}
+
+// -----------------------------------------------------------------------------
+// Müvekkil
+// -----------------------------------------------------------------------------
+
+model Client {
+  id             String   @id @default(cuid())
+  fullName       String
+  tckn           String?  @unique // 11 hane, validasyon uygulamada
+  taxId          String?  @unique // Tüzel kişilik için VKN
+  phone          String?
+  email          String?
+  address        String?
+  kvkkConsent    Boolean  @default(false)
+  kvkkConsentAt  DateTime?
+  notes          String?
+  portalUserId   String?  @unique
+  portalUser     User?    @relation("ClientPortal", fields: [portalUserId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  cases     Case[]
+  documents Document[]
+  invoices  Invoice[]
+
+  @@index([fullName])
+  @@index([deletedAt])
+}
+
+// -----------------------------------------------------------------------------
+// Dava & duruşma
+// -----------------------------------------------------------------------------
+
+enum CaseStatus {
+  OPEN // Açık
+  HEARING_PENDING // Duruşma bekleniyor
+  DECISION // Karar aşaması
+  CLOSED // Kapalı
+  ARCHIVED // Arşivde
+}
+
+model Case {
+  id          String     @id @default(cuid())
+  fileNumber  String     @unique // büro iç dosya no
+  court       String // Mahkeme adı
+  esasNo      String? // Esas no
+  kararNo     String? // Karar no
+  counterparty String // Karşı taraf
+  subject     String // Konu
+  status      CaseStatus @default(OPEN)
+  openedAt    DateTime   @default(now())
+  closedAt    DateTime?
+  clientId    String
+  client      Client     @relation(fields: [clientId], references: [id])
+  assigneeId  String?
+  assignee    User?      @relation("CaseAssignee", fields: [assigneeId], references: [id])
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  hearings  Hearing[]
+  documents Document[]
+  invoices  Invoice[]
+
+  @@index([clientId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model Hearing {
+  id        String   @id @default(cuid())
+  caseId    String
+  case      Case     @relation(fields: [caseId], references: [id])
+  scheduledAt DateTime
+  location  String
+  outcome   String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@index([caseId])
+  @@index([scheduledAt])
+}
+
+// -----------------------------------------------------------------------------
+// Belge & RAG chunks
+// -----------------------------------------------------------------------------
+
+model Document {
+  id         String   @id @default(cuid())
+  title      String
+  storagePath String // storage/.. altındaki yol
+  mimeType   String
+  size       Int
+  checksum   String?
+  tags       String[]
+  version    Int      @default(1)
+  parentId   String?
+  parent     Document? @relation("DocumentVersions", fields: [parentId], references: [id])
+  versions   Document[] @relation("DocumentVersions")
+  uploaderId String
+  uploader   User     @relation("DocumentUploader", fields: [uploaderId], references: [id])
+  clientId   String?
+  client     Client?  @relation(fields: [clientId], references: [id])
+  caseId     String?
+  case       Case?    @relation(fields: [caseId], references: [id])
+  indexedAt  DateTime? // embedding tamamlandı
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+
+  chunks DocumentChunk[]
+
+  @@index([clientId])
+  @@index([caseId])
+  @@index([uploaderId])
+  @@index([deletedAt])
+}
+
+enum ChunkType {
+  MADDE // Hukuki madde
+  FIKRA // Fıkra
+  PARAGRAF // Paragraf
+  BASLIK // Başlık/heading
+  DIGER
+}
+
+// DocumentChunk.embedding için vektör index Prisma migrate tarafından değil,
+// scripts/create-hnsw-index.sql tarafından kurulur (HNSW `m=16, ef_construction=64`).
+model DocumentChunk {
+  id          String   @id @default(cuid())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunkIndex  Int
+  content     String
+  chunkType   ChunkType @default(PARAGRAF)
+  tokenCount  Int?
+  // Vektör; Prisma prisma-client-js + pgvector paketi ile Unsupported olarak tanımlanır
+  embedding   Unsupported("vector(1024)")?
+  // Postgres full-text arama (BM25 yerine ts_rank kullanırız)
+  tsv         Unsupported("tsvector")?
+  createdAt   DateTime @default(now())
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+}
+
+// -----------------------------------------------------------------------------
+// Finans
+// -----------------------------------------------------------------------------
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIAL
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model Invoice {
+  id          String         @id @default(cuid())
+  number      String         @unique
+  clientId    String
+  client      Client         @relation(fields: [clientId], references: [id])
+  caseId      String?
+  case        Case?          @relation(fields: [caseId], references: [id])
+  issuedAt    DateTime       @default(now())
+  dueDate     DateTime
+  subtotal    Decimal        @db.Decimal(14, 2)
+  vatRate     Decimal        @default(20) @db.Decimal(5, 2) // %20 KDV
+  vatAmount   Decimal        @db.Decimal(14, 2)
+  total       Decimal        @db.Decimal(14, 2)
+  status      InvoiceStatus  @default(DRAFT)
+  notes       String?
+  pdfPath     String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deletedAt   DateTime?
+
+  lines    InvoiceLine[]
+  payments Payment[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model InvoiceLine {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Decimal  @default(1) @db.Decimal(10, 2)
+  unitPrice   Decimal  @db.Decimal(14, 2)
+  amount      Decimal  @db.Decimal(14, 2)
+
+  @@index([invoiceId])
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CARD
+  OTHER
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  invoiceId String
+  invoice   Invoice       @relation(fields: [invoiceId], references: [id])
+  amount    Decimal       @db.Decimal(14, 2)
+  paidAt    DateTime      @default(now())
+  method    PaymentMethod @default(BANK_TRANSFER)
+  reference String?
+  createdAt DateTime      @default(now())
+  deletedAt DateTime?
+
+  @@index([invoiceId])
+}
+
+// -----------------------------------------------------------------------------
+// AI Chat
+// -----------------------------------------------------------------------------
+
+model ChatSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String   @default("Yeni sohbet")
+  // Oturum kapsamı: belirli müvekkil/dava/doküman setinde RAG yap
+  scopeClientIds   String[]
+  scopeCaseIds     String[]
+  scopeDocumentIds String[]
+  maskPii   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  messages ChatMessage[]
+
+  @@index([userId])
+  @@index([deletedAt])
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      ChatRole
+  content   String
+  // Hangi model tarafından üretildi (router / main)
+  model     String?
+  // RAG sonuçlarından hangi chunk'lar citation olarak kullanıldı
+  citations Json? // [{ chunkId, documentId, score }]
+  tokensIn  Int?
+  tokensOut Int?
+  createdAt DateTime    @default(now())
+
+  @@index([sessionId])
+}
+
+// -----------------------------------------------------------------------------
+// Mevzuat / içtihat (scraper doldurur)
+// -----------------------------------------------------------------------------
+
+enum CourtType {
+  YARGITAY
+  DANISTAY
+  ANAYASA_MAHKEMESI
+  BAM // Bölge Adliye Mahkemesi
+  DIGER
+}
+
+model PrecedentCase {
+  id        String    @id @default(cuid())
+  court     CourtType
+  chamber   String? // Daire
+  esasNo    String
+  kararNo   String
+  decidedAt DateTime
+  summary   String?
+  text      String
+  source    String // kaynak URL
+  url       String?
+  // Tam metin embedding (HNSW ile aranır)
+  embedding Unsupported("vector(1024)")?
+  tsv       Unsupported("tsvector")?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([court, esasNo, kararNo])
+  @@index([court])
+  @@index([decidedAt])
+}
+
+// -----------------------------------------------------------------------------
+// KVKK audit (append-only — Client Extension silmeyi reddeder)
+// -----------------------------------------------------------------------------
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE // gerçek hard delete (sistem kullanıcısı, manuel müdahale)
+  SOFT_DELETE
+  VIEW
+  EXPORT
+  LOGIN
+  LOGOUT
+  FAILED_LOGIN
+  AI_QUERY
+  AI_EXPORT
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  userId    String?
+  user      User?       @relation(fields: [userId], references: [id])
+  action    AuditAction
+  entity    String // 'Client', 'Case', 'Document', ...
+  entityId  String?
+  diff      Json? // before/after
+  ip        String?
+  userAgent String?
+  reason    String?
+  at        DateTime    @default(now())
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([at])
+}
+
+// -----------------------------------------------------------------------------
+// Arka plan iş durumu (dashboard için)
+// -----------------------------------------------------------------------------
+
+enum JobQueueKind {
+  PDF
+  EMBEDDING
+  SCRAPE
+  REPORT
+}
+
+enum JobState {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+model BackgroundJob {
+  id        String       @id @default(cuid())
+  queue     JobQueueKind
+  kind      String // e.g. 'indexDocument', 'scrapeYargitay'
+  state     JobState     @default(QUEUED)
+  payload   Json?
+  result    Json?
+  error     String?
+  attempts  Int          @default(0)
+  startedAt DateTime?
+  finishedAt DateTime?
+  createdAt DateTime     @default(now())
+
+  @@index([queue, state])
+}
