@@ -1,0 +1,26 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint", "no-restricted-syntax"],
+  "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module"
+  },
+  "rules": {
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.property.name='delete'][callee.object.object.name='prisma']",
+        "message": "Hard delete yasak — KVKK append-only. soft-delete extension kullan veya deletedAt güncelle."
+      },
+      {
+        "selector": "CallExpression[callee.property.name='deleteMany'][callee.object.object.name='prisma']",
+        "message": "Hard delete yasak — KVKK append-only. soft-delete extension kullan veya deletedAt güncelle."
+      }
+    ],
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/no-explicit-any": "warn"
+  },
+  "ignorePatterns": ["dist/", ".next/", "node_modules/", "*.config.*"]
+}

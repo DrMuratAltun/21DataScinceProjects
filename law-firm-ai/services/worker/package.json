@@ -1,0 +1,30 @@
+{
+  "name": "@law-firm-ai/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "worker:pdf": "tsx src/workers/pdf.ts",
+    "worker:embedding": "tsx src/workers/embedding.ts",
+    "worker:scrape": "tsx src/workers/scrape.ts",
+    "worker:report": "tsx src/workers/report.ts",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@law-firm-ai/ai": "workspace:*",
+    "@law-firm-ai/db": "workspace:*",
+    "@react-pdf/renderer": "^4.1.5",
+    "bullmq": "^5.21.0",
+    "ioredis": "^5.4.1",
+    "mammoth": "^1.8.0",
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

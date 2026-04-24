@@ -1,0 +1,23 @@
+@import 'tailwindcss';
+
+:root {
+  --background: 255 255 255;
+  --foreground: 15 23 42;
+  --primary: 30 64 175;
+  --primary-foreground: 255 255 255;
+  --muted: 241 245 249;
+  --muted-foreground: 100 116 139;
+  --border: 226 232 240;
+  --destructive: 220 38 38;
+}
+
+html,
+body {
+  background: rgb(var(--background));
+  color: rgb(var(--foreground));
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+}
+
+* {
+  border-color: rgb(var(--border));
+}

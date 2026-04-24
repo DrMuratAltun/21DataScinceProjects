@@ -1,0 +1,34 @@
+{
+  "name": "@law-firm-ai/ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ollama": "./src/ollama.ts",
+    "./router": "./src/router.ts",
+    "./rag": "./src/rag.ts",
+    "./chunker": "./src/chunker.ts",
+    "./pii": "./src/pii/index.ts",
+    "./templates": "./src/templates/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^1.0.0",
+    "@law-firm-ai/db": "workspace:*",
+    "ai": "^4.0.0",
+    "handlebars": "^4.7.8",
+    "tiktoken": "^1.0.15",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
